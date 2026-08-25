@@ -1463,14 +1463,9 @@ em_ctrl_t::~em_ctrl_t()
 #ifdef AL_SAP
 AlServiceAccessPoint* em_ctrl_t::al_sap_register(const std::string& data_socket_path, const std::string& control_socket_path)
 {
-    AlServiceAccessPoint* sap = NULL;
+    AlServiceAccessPoint* sap = nullptr;
     try {
         sap = new AlServiceAccessPoint(data_socket_path.c_str(), control_socket_path.c_str());
-        if (NULL == sap) {
-            em_printfout("%s-%d: Failed to allocate AlServiceAccessPoint", __func__, __LINE__);
-            return NULL;
-        }
-
         AlServiceRegistrationRequest registrationRequest(SAPActivation::SAP_ENABLE, ServiceType::EmController);
         sap->serviceAccessPointRegistrationRequest(registrationRequest);
 
@@ -1481,7 +1476,7 @@ AlServiceAccessPoint* em_ctrl_t::al_sap_register(const std::string& data_socket_
             g_al_mac_sap = registrationResponse.getAlMacAddressLocal();
             uint8_t* al_mac_bytes = g_al_mac_sap.data();
             if (NULL == al_mac_bytes) {
-                em_printfout("%s-%d: AL SAP registration failed with invalid AL MAC: %s", util::mac_to_string(al_mac_bytes).c_str());
+                em_printfout("AL SAP registration failed with invalid AL MAC");
                 delete sap;
                 return NULL;
             }
@@ -1494,12 +1489,12 @@ AlServiceAccessPoint* em_ctrl_t::al_sap_register(const std::string& data_socket_
         }
     }
     catch (const AlServiceException& e) {
-        em_printfout("%s-%d: AL SAP registration exception %s", __func__, __LINE__, e.what());
+        em_printfout("AL SAP registration exception %s", e.what());
         delete sap;
         return NULL;
     }
-    catch (const std::exception e) {
-        em_printfout("%s-%d: Unknown exception %s during AL SAP registration", __func__, __LINE__, e.what());
+    catch (const std::exception&) {
+        em_printfout("Unknown exception during AL SAP registration");
         delete sap;
         return NULL;
     }
@@ -1520,15 +1515,15 @@ int main(int argc, const char *argv[])
     if(0 == access(data_socket_path, F_OK) && 0 == access(control_socket_path, F_OK)) {
         g_sap = em_ctrl->al_sap_register(data_socket_path, control_socket_path);
         if (NULL == g_sap) {
-            em_printfout("%s-%d: Error in AL SAP registration, exiting", __func__, __LINE__);
+            em_printfout("Error in AL SAP registration, exiting");
             return -1;
         }
     }
     else {
-        em_printfout("%s-%d: Data Socket: %s, Control Socket: %s", __func__, __FILE__,
+        em_printfout("Data Socket: %s, Control Socket: %s",
 	              access(data_socket_path, F_OK) == 0 ? "present" : "missing",
                       access(control_socket_path, F_OK) == 0 ? "present" : "missing");
-        em_printfout("%s-%d: Required AL SAP socket(s) not available, exiting", __func__, __LINE__);
+        em_printfout("Required AL SAP socket(s) not available, exiting");
         return -1;
     }
 #endif
