@@ -28,11 +28,11 @@ class em_mgr_t {
     pthread_t   m_tid;
     bool m_exit;
     em_queue_t  m_queue;
-	unsigned int m_tick_demultiplex;
-	unsigned short m_msg_id;
+    unsigned int m_tick_demultiplex;
+    unsigned short m_msg_id;
 
 public:
-	pthread_mutex_t m_mutex;
+    pthread_mutex_t m_mutex;
     hash_map_t      *m_em_map;
     unsigned int m_timeout;
     fd_set  m_rset;
