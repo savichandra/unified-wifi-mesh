@@ -3195,6 +3195,7 @@ typedef enum {
     em_bus_event_type_unassoc_sta_result,
     em_bus_event_type_failed_conn,
     em_bus_event_type_vendor_data,
+    em_bus_event_type_backhaul_change,
 
     em_bus_event_type_max
 } em_bus_event_type_t;

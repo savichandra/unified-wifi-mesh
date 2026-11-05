@@ -1535,6 +1535,10 @@ void em_agent_t::handle_bus_event(em_bus_event_t *evt)
             handle_vendor_data(evt);
             break;
 
+	case em_bus_event_type_backhaul_change:
+           handle_backhaul_change(evt);
+           break;
+
         default:
             break;
     }    
@@ -2866,6 +2870,48 @@ bool em_agent_t::try_start_dpp_onboarding()  {
     return true;
 }
 
+void em_agent_t::handle_backhaul_change(em_bus_event_t *evt)
+{
+    if (evt == nullptr) {
+        em_printfout("Backhaul change: null event");
+        return;
+    }
+
+    if (evt->data_len != sizeof(em_backhaul_interface_notify_t)) {
+        em_printfout("Backhaul change: invalid payload length=%u expected=%zu",
+            evt->data_len,
+            sizeof(em_backhaul_interface_notify_t));
+        return;
+    }
+
+    em_backhaul_interface_notify_t bh = {};
+    memcpy(&bh, evt->u.raw_buff, sizeof(bh));
+
+    if (memchr(bh.ifname, '\0', sizeof(bh.ifname)) == nullptr || bh.ifname[0] == '\0' ||
+        bh.ifindex == 0 || bh.root_port == 0 || bh.port_state != STP_FORWARDING) {
+        em_printfout("Backhaul change: invalid backhaul interface");
+        return;
+    }
+
+    constexpr uint8_t zero_mac[ETH_ALEN] = {};
+
+    // reject multicast and broadcast MAC addresses for BH interface
+    if (memcmp(bh.mac_addr, zero_mac, ETH_ALEN) == 0 || (bh.mac_addr[0] & 0x01) != 0) {
+        em_printfout("Backhaul change: invalid MAC for interface=%s", bh.ifname);
+        return;
+    }
+
+    em_printfout("Valid Backhaul change received: interface=%s ifindex=%u root_port=%u mac=%02x:%02x:%02x:%02x:%02x:%02x",
+        bh.ifname,
+        bh.ifindex,
+        bh.root_port,
+        bh.mac_addr[0], bh.mac_addr[1],
+        bh.mac_addr[2], bh.mac_addr[3],
+        bh.mac_addr[4], bh.mac_addr[5]);
+
+    // TDODO - Topology Notication trigger might be required to notify the backhauk type change to controller
+}
+
 em_agent_t::em_agent_t()
     : m_orch(nullptr), m_data_model(), m_data_model_path{}, m_agent_cmd(nullptr), m_simulator(), m_bus_hdl{}
 {
@@ -2876,6 +2922,7 @@ em_agent_t::~em_agent_t()
 {
 
 }
+
 #ifdef AL_SAP
 AlServiceAccessPoint* em_agent_t::al_sap_register(const std::string& data_socket_path, const std::string& control_socket_path)
 {
@@ -2901,6 +2948,7 @@ AlServiceAccessPoint* em_agent_t::al_sap_register(const std::string& data_socket
     return sap;
 }
 #endif
+
 #ifndef UNIT_TEST
 int main(int argc, const char *argv[])
 {
