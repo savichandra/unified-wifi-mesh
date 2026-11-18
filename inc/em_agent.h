@@ -45,7 +45,7 @@ class em_agent_t : public em_mgr_t {
     dm_easy_mesh_agent_t m_data_model;
     em_short_string_t   m_data_model_path;
     em_cmd_agent_t  *m_agent_cmd;
-	em_simulator_t	m_simulator;
+    em_simulator_t m_simulator;
 
 	
 	/**!
@@ -390,6 +390,13 @@ class em_agent_t : public em_mgr_t {
 	void send_beacon_query(em_bus_event_t *evt);
 
 	static bool get_tx_power_snapshot(const raw_data_t &data, em_tx_power_response_t *snapshot);
+
+        bool m_eth_backhaul_state_known = false;
+        bool m_eth_backhaul_active = false;
+        bool m_eth_backhaul_delivery_pending = false;
+        void handle_backhaul_change(em_bus_event_t *evt);
+        int publish_backhaul_status();
+
 public:
 
     bus_handle_t m_bus_hdl;
