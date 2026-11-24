@@ -67,6 +67,7 @@ onewifi_em_ctrl_SOURCES =  \
      $(top_srcdir)/src/em/metrics/em_metrics.cpp \
      $(top_srcdir)/src/em/em_vendor.cpp \
      $(top_srcdir)/src/em/steering/em_steering.cpp \
+     $(top_srcdir)/src/em/fw_download/em_fw_download.cpp \
      $(top_srcdir)/src/em/policy_cfg/em_policy_cfg.cpp \
      $(top_srcdir)/src/em/crypto/em_crypto.cpp \
      $(top_srcdir)/src/cmd/em_cmd_ap_cap.cpp \
@@ -95,6 +96,7 @@ onewifi_em_ctrl_SOURCES =  \
      $(top_srcdir)/src/cmd/em_cmd_sta_assoc.cpp \
      $(top_srcdir)/src/cmd/em_cmd_sta_disassoc.cpp \
      $(top_srcdir)/src/cmd/em_cmd_client_assoc_ctrl_req.cpp \
+     $(top_srcdir)/src/cmd/em_cmd_fw_download.cpp \
      $(top_srcdir)/src/cmd/em_cmd_sta_link_metrics.cpp \
      $(top_srcdir)/src/cmd/em_cmd_sta_list.cpp \
      $(top_srcdir)/src/cmd/em_cmd_start_dpp.cpp \

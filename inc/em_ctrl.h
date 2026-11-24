@@ -26,6 +26,7 @@
 #include "bus.h"
 #include "em_dev_test_ctrl.h"
 #include <map>
+#include <mutex>
 #include <string>
 
 #define EM_RECENT_DISASSOC_MAX_AGE_SEC 30
@@ -53,6 +54,10 @@ class em_ctrl_t : public em_mgr_t {
         struct timespec ts;
     } em_recent_disassoc_t;
     std::map<std::string, em_recent_disassoc_t> m_recent_disassoc;
+
+    /* Firmware download status per extender, keyed by AL MAC; written from the EM threads, read from the bus */
+    std::map<std::string, em_fw_dl_status_t> m_fw_status;
+    std::mutex m_fw_status_mtx;
 	em_dev_test_t dev_test;
 
     // Persistence backend resolved from the process's command-line
@@ -90,6 +95,18 @@ public:
 	dm_easy_mesh_ctrl_t *get_dm_ctrl() { return &m_data_model; }
 
 	em_orch_t *get_orch() override { return m_orch; }
+
+	void fw_download_begin(const em_cmd_fw_download_params_t *params) override;
+	void fw_download_service_rsp(const mac_address_t al_mac, const em_fw_dl_svc_rsp_t *rsp) override;
+	void fw_download_path_rsp(const mac_address_t al_mac, const em_fw_dl_path_rsp_t *rsp) override;
+	void fw_download_notif(const mac_address_t al_mac, const em_fw_dl_notif_t *notif) override;
+
+	/**!
+	 * @brief Copies the firmware download status tracked for an extender.
+	 *
+	 * @returns true when a status exists for the AL MAC.
+	 */
+	bool get_fw_status(const mac_address_t al_mac, em_fw_dl_status_t *out);
     
 	/**!
 	 * @brief Listens for input events and processes them accordingly.
@@ -250,6 +267,13 @@ public:
 	 * @note Ensure that the event structure is properly initialized before calling this function.
 	 */
 	void handle_client_steer(em_bus_event_t *evt);
+
+	/**!
+	 * @brief Handles the extender firmware download request from the data model.
+	 *
+	 * @param[in] evt Event carrying the validated FirmwareDownload JSON.
+	 */
+	void handle_fw_download(em_bus_event_t *evt);
 
 	/**!
 	 * @brief Handles client assoc ctrl req based on the event provided.
@@ -949,6 +973,13 @@ public:
 	 * @note Input property ownership remains with the caller; this function does not free them.
 	 */
 	static bus_error_t cmd_clientsteer (const char *method_name, const bus_data_prop_t *input_params, bus_data_prop_t **output_params, void *async_handle);
+
+	/**!
+	 * @brief Validates Device.DeviceInfo.FirmwareImage.{i}.Download() and submits the firmware download.
+	 *
+	 * @returns bus_error_success when the request was queued, a bus error otherwise.
+	 */
+	static bus_error_t cmd_fwimage_download (const char *method_name, const bus_data_prop_t *input_params, bus_data_prop_t **output_params, void *async_handle);
 
 	/**!
 	 * @brief Handles the bus X_AIRTIES_BeaconMetricsQuery method request.

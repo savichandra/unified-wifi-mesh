@@ -2409,6 +2409,11 @@ typedef enum {
     em_state_ctrl_topo_publish_pending,
     em_state_ctrl_unassoc_sta_link_metrics_pending,
     em_state_ctrl_client_assoc_ctrl_req_pending,
+    em_state_ctrl_fw_svc_req_pending,
+    em_state_ctrl_fw_svc_rsp_pending,
+    em_state_ctrl_fw_l3_path_req_pending,
+    em_state_ctrl_fw_l3_path_rsp_pending,
+    em_state_ctrl_fw_download_done,
 
     //common states
     em_state_beacon_report_pending,
@@ -2470,6 +2475,7 @@ typedef enum {
     em_cmd_type_unassoc_sta_result,
     em_cmd_type_vendor_data,
     em_cmd_type_client_assoc_ctrl_req,
+    em_cmd_type_fw_download,
 
     em_cmd_type_max,
 } em_cmd_type_t;
@@ -3211,6 +3217,7 @@ typedef enum {
     em_bus_event_type_unassoc_sta_query,
     em_bus_event_type_unassoc_sta_link_metrics_query,
     em_bus_event_type_unassoc_sta_result,
+    em_bus_event_type_fw_download,
     em_bus_event_type_failed_conn,
     em_bus_event_type_vendor_data,
     em_bus_event_type_sta_cap_update,
@@ -3314,7 +3321,8 @@ typedef enum {
     dm_orch_type_unassoc_sta_link_req_query,
     dm_orch_type_unassoc_sta_result,
     dm_orch_type_client_assoc,
-    dm_orch_type_vendor_data
+    dm_orch_type_vendor_data,
+    dm_orch_type_fw_download
 
 } dm_orch_type_t;
 
@@ -3521,6 +3529,37 @@ typedef struct {
     mac_address_t al_mac;
 } em_cmd_unassoc_sta_query_params_t;
 
+/* Device.DeviceInfo.FirmwareImage.{i}.Download() parameters, already validated */
+#define EM_FW_URL_MAX_LEN           1024
+#define EM_FW_NAME_MAX_LEN          256
+#define EM_FW_DL_DEFAULT_MAX_RETRY 3
+#define EM_FW_VERSION_MAX_LEN       64
+#define EM_FW_CHECKSUM_MAX_LEN      64
+
+typedef enum {
+    em_fw_dl_protocol_http = 0x01,
+    em_fw_dl_protocol_https = 0x02,
+} em_fw_dl_protocol_t;
+
+typedef enum {
+    em_fw_dl_checksum_sha256 = 0x01,
+    em_fw_dl_checksum_sha384 = 0x02,
+    em_fw_dl_checksum_sha512 = 0x03,
+} em_fw_dl_checksum_alg_t;
+
+typedef struct {
+    mac_address_t   al_mac;
+    unsigned char   protocol;
+    char            url[EM_FW_URL_MAX_LEN];
+    unsigned long long  image_size;
+    char            name[EM_FW_NAME_MAX_LEN];
+    char            version[EM_FW_VERSION_MAX_LEN];
+    unsigned char   checksum_alg;
+    unsigned char   checksum[EM_FW_CHECKSUM_MAX_LEN];
+    unsigned char   max_retry;
+    bool            activate_immediately;
+} em_cmd_fw_download_params_t;
+
 typedef em_scan_params_t em_cmd_scan_params_t;
 typedef em_beacon_metrics_query_t em_cmd_beacon_metrics_param_t;
 
@@ -3534,6 +3573,7 @@ typedef struct {
 		em_cmd_scan_params_t	scan_params;
         em_cmd_ap_metrics_rprt_params_t ap_metrics_params;
         em_cmd_unassoc_sta_query_params_t unassoc_sta_query_params;
+        em_cmd_fw_download_params_t fw_download_params;
         em_cmd_beacon_metrics_param_t beacon_metrics_params;
     } u;
 	em_network_node_t *net_node;

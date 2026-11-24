@@ -420,6 +420,8 @@ typedef struct {
 #define DE_STA_PAIRWSAKM        DE_BSS_STA              "PairwiseAKM"
 #define DE_STA_PAIRWSCIPHER     DE_BSS_STA              "PairwiseCipher"
 #define DE_STA_RSNCAPS          DE_BSS_STA              "RSNCapabilities"
+#define DATAELEMS_FWIMAGE       "Device.DeviceInfo.FirmwareImage."
+#define DE_FWIMG_DOWNLOAD       DATAELEMS_FWIMAGE       "{i}.Download()"
 #define DE_STA_CLIENTSTEER      DE_BSS_STA              "ClientSteer()"
 #define DE_STA_BEACONMETRICSQ   DE_BSS_STA              "X_AIRTIES_BeaconMetricsQuery()"
 /* Device.WiFi.DataElements.Network.Device.Radio.BSS.STA.WiFi6Capabilities */
@@ -766,6 +768,22 @@ public:
      * @note Ownership of input and output buffers remains with the caller.
      */
     static bus_error_t clientsteer_handler(const char *method_name, bus_data_prop_t *input_data,
+        bus_data_prop_t *output_data, void *async_handle);
+
+    /**!
+     * @brief Handles the Device.DeviceInfo.FirmwareImage.{i}.Download() method invocation.
+     *
+     * @param[in] method_name Full method path including the instance.
+     * @param[in] input_data Input properties (URL, AutoActivate, FileSize, CheckSumAlgorithm, CheckSum).
+     * @param[out] output_data Receives the Status output property.
+     * @param[in] async_handle Unused.
+     *
+     * @returns bus_error_success when the firmware download was submitted.
+     * @retval bus_error_invalid_input on missing or invalid input.
+     *
+     * @note Ownership of input and output buffers remains with the caller.
+     */
+    static bus_error_t fwimage_download_handler(const char *method_name, bus_data_prop_t *input_data,
         bus_data_prop_t *output_data, void *async_handle);
 
     /**!

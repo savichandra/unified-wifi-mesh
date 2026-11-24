@@ -581,6 +581,16 @@ public:
 	 * @note Ensure that the event and command array are properly initialized before calling this function.
 	 */
 	int analyze_command_steer(em_bus_event_t *evt, em_cmd_t *cmd[]);
+
+	/**!
+	 * @brief Builds the firmware download command from a FirmwareDownload subdoc.
+	 *
+	 * @param[in] evt Bus event carrying the wfa-dataelements:FirmwareDownload JSON.
+	 * @param[out] cmd Commands created.
+	 *
+	 * @returns Number of commands created, 0 when the input is invalid.
+	 */
+	int analyze_command_fw_download(em_bus_event_t *evt, em_cmd_t *cmd[]);
     
 	/**!
 	 * @brief Analyzes the disassociation command.

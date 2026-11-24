@@ -311,6 +311,15 @@ bool em_orch_ctrl_t::is_em_ready_for_orch_fini(em_cmd_t *pcmd, em_t *em)
             }
             break;
 
+        case em_cmd_type_fw_download:
+            // Orchestration ends once the Layer#3 path exchange is over; download progress is
+            // tracked afterwards from Service Notifications.
+            if (em->get_state() == em_state_ctrl_fw_download_done) {
+                em->set_state(em_state_ctrl_configured);
+                return true;
+            }
+            break;
+
         case em_cmd_type_beacon_query:
             if (em->get_state() == em_state_beacon_report_complete) {
                 return true;
@@ -379,6 +388,7 @@ bool em_orch_ctrl_t::is_em_ready_for_orch_exec(em_cmd_t *pcmd, em_t *em)
         case em_cmd_type_bsta_cap:
 	case em_cmd_type_unassoc_sta_query:
         case em_cmd_type_client_assoc_ctrl_req:
+        case em_cmd_type_fw_download:
             if (em->get_state() == em_state_ctrl_configured) {
                 return true;
             }
@@ -439,6 +449,12 @@ void em_orch_ctrl_t::pre_process_cancel(em_cmd_t *pcmd, em_t *em)
 
         case em_cmd_type_beacon_query:
             em_printfout("Cancel received for Beacon Metrics Query command, transitioning to configured state radio: %s",
+                util::mac_to_string(em->get_radio_interface_mac()).c_str());
+            em->set_state(em_state_ctrl_configured);
+            break;
+
+        case em_cmd_type_fw_download:
+            em_printfout("Cancel received for Firmware Download command, transitioning to configured state radio: %s",
                 util::mac_to_string(em->get_radio_interface_mac()).c_str());
             em->set_state(em_state_ctrl_configured);
             break;
@@ -793,6 +809,17 @@ unsigned int em_orch_ctrl_t::build_candidates(em_cmd_t *pcmd)
             case em_cmd_type_unassoc_sta_query:
                 if (count == 0 && memcmp(em->get_data_model()->get_agent_al_interface_mac(),
                     pcmd->m_param.u.unassoc_sta_query_params.al_mac, sizeof(mac_address_t)) == 0) {
+                    queue_push(pcmd->m_em_candidates, em);
+                    count++;
+                }
+                break;
+
+            case em_cmd_type_fw_download:
+                // Messages travel to the agent's AL MAC; pick the same EM the vendor CMDU
+                // responses are routed to (first non AL interface EM of that agent)
+                if (count == 0 && em->is_al_interface_em() == false &&
+                    memcmp(em->get_data_model()->get_agent_al_interface_mac(),
+                    pcmd->m_param.u.fw_download_params.al_mac, sizeof(mac_address_t)) == 0) {
                     queue_push(pcmd->m_em_candidates, em);
                     count++;
                 }

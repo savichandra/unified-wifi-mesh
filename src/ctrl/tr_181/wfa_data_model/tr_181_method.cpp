@@ -385,6 +385,46 @@ bus_error_t tr_181_t::clientsteer_handler(const char *method_name, bus_data_prop
     return rc;
 }
 
+bus_error_t tr_181_t::fwimage_download_handler(const char *method_name, bus_data_prop_t *input_data,
+    bus_data_prop_t *output_data, void *async_handle)
+{
+    if (!input_data || (!input_data->is_data_set && input_data->next_data == NULL)) {
+        em_printfout("Invalid input_data or missing input_props");
+        if (output_data) {
+            tr_181_t::tr181_set_status_output(output_data, "Failure: missing input_props");
+        }
+        return bus_error_invalid_input;
+    }
+
+    bus_data_prop_t *output_props = NULL;
+
+    em_printfout("Method='%s'", method_name ? method_name : "(null)");
+
+    em_ctrl_t *ctrl = em_ctrl_t::get_em_ctrl_instance();
+    if (!ctrl) {
+        em_printfout("Controller unavailable");
+        if (output_data) {
+            tr_181_t::tr181_set_status_output(output_data, "Failure: controller unavailable");
+        }
+        return bus_error_invalid_input;
+    }
+
+    bus_error_t rc = ctrl->cmd_fwimage_download(method_name, input_data, output_data ? &output_props : NULL, async_handle);
+
+    if (output_data && output_props) {
+        *output_data = *output_props;
+        output_data->ref_count = 1;
+
+        for (bus_data_prop_t *p = output_data->next_data; p; p = p->next_data) {
+            p->ref_count = 1;
+        }
+
+        free(output_props);
+    }
+
+    return rc;
+}
+
 bus_error_t tr_181_t::beaconmetricsquery_handler(const char *method_name, bus_data_prop_t *input_data,
     bus_data_prop_t *output_data, void *async_handle)
 {

@@ -29,6 +29,7 @@
 #include "em_capability.h"
 #include "em_metrics.h"
 #include "em_vendor.h"
+#include "em_fw_download.h"
 #include "em_steering.h"
 #include "em_policy_cfg.h"
 #include "dm_easy_mesh.h"
@@ -53,7 +54,7 @@ class em_t :
     public em_provisioning_t, public em_channel_t,
     public em_capability_t, public em_metrics_t,
     public em_steering_t, public em_policy_cfg_t,
-    public em_vendor_t  {
+    public em_vendor_t, public em_fw_download_t  {
     
     dm_easy_mesh_t*  m_data_model;
 	em_mgr_t	*m_mgr;

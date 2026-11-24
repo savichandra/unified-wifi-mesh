@@ -45,6 +45,7 @@
 #include "em_crypto.h"
 #include <cjson/cJSON.h>
 #include "em_cmd_exec.h"
+#include "em_cmd_fw_download.h"
 #include "em_cmd_reset.h"
 #include "em_cmd_dev_test.h"
 #include "em_cmd_remove_device.h"
@@ -2409,6 +2410,194 @@ cleanup:
     return rc;
 }
 
+bus_error_t em_ctrl_t::cmd_fwimage_download(const char *method_name, const bus_data_prop_t *input_params, bus_data_prop_t **output_params, void *async_handle)
+{
+    (void)async_handle;
+    const char *name = method_name;
+    const char *param;
+    char instance[MAX_INSTANCE_LEN] = { 0 };
+    bool is_num;
+    const bus_data_prop_t *prop = NULL;
+    char url[EM_FW_URL_MAX_LEN] = { 0 };
+    char algorithm[16] = { 0 };
+    char checksum[EM_FW_CHECKSUM_MAX_LEN * 2 + 1] = { 0 };
+    char fw_name[EM_FW_NAME_MAX_LEN] = { 0 };
+    char version[EM_FW_VERSION_MAX_LEN] = { 0 };
+    int file_size = -1;
+    bool activate = false;
+    unsigned int expected_hex_len = 0;
+    mac_addr_str_t mac_str;
+    cJSON *root = NULL, *fw_obj = NULL;
+    char *json_buff = NULL;
+    size_t json_len;
+    bus_error_t rc = bus_error_invalid_input;
+
+    param = strrchr(name, '.');
+    if (param == NULL || strcmp("Download()", ++param) != 0) {
+        em_printfout("Invalid method");
+        if (output_params) {
+            *output_params = tr_181_t::tr181_set_status_output_prop("Failure");
+        }
+        return bus_error_invalid_method;
+    }
+
+    em_ctrl_t *em_ctrl = em_ctrl_t::get_em_ctrl_instance();
+    if (!em_ctrl) {
+        em_printfout("Controller not found");
+        if (output_params) {
+            *output_params = tr_181_t::tr181_set_status_output_prop("Failure");
+        }
+        return bus_error_general;
+    }
+    dm_easy_mesh_ctrl_t *dm_ctrl = em_ctrl->get_dm_ctrl();
+
+    /* FirmwareImage.{i} maps to an extender, resolved like a Device instance */
+    name += sizeof(DATAELEMS_FWIMAGE) - 1;
+    name = dm_ctrl->get_table_instance(name, instance, MAX_INSTANCE_LEN, &is_num);
+    dm_easy_mesh_t *dm = dm_ctrl->get_dm_easy_mesh(instance, is_num);
+    if (dm == NULL || dm->get_device() == NULL) {
+        em_printfout("FirmwareImage instance not found");
+        if (output_params) {
+            *output_params = tr_181_t::tr181_set_status_output_prop("Failure");
+        }
+        return bus_error_invalid_namespace;
+    }
+    if (memcmp(dm->get_agent_al_interface_mac(), dm->get_ctrl_al_interface_mac(), sizeof(mac_address_t)) == 0) {
+        em_printfout("FirmwareImage instance refers to the controller, not an extender");
+        if (output_params) {
+            *output_params = tr_181_t::tr181_set_status_output_prop("Failure");
+        }
+        return bus_error_invalid_namespace;
+    }
+
+    for (prop = input_params; prop; prop = prop->next_data) {
+        if (strcmp(prop->name, "URL") == 0) {
+            if (!tr_181_t::tr181_copy_prop_string(prop, url, sizeof(url))) {
+                goto invalid;
+            }
+        } else if (strcmp(prop->name, "AutoActivate") == 0) {
+            if (!tr_181_t::tr181_get_prop_bool(prop, &activate)) {
+                goto invalid;
+            }
+        } else if (strcmp(prop->name, "FileSize") == 0) {
+            if (!tr_181_t::tr181_get_prop_int(prop, &file_size)) {
+                goto invalid;
+            }
+        } else if (strcmp(prop->name, "CheckSumAlgorithm") == 0) {
+            if (!tr_181_t::tr181_copy_prop_string(prop, algorithm, sizeof(algorithm))) {
+                goto invalid;
+            }
+        } else if (strcmp(prop->name, "CheckSum") == 0) {
+            if (!tr_181_t::tr181_copy_prop_string(prop, checksum, sizeof(checksum))) {
+                goto invalid;
+            }
+        } else if (strcmp(prop->name, "Username") == 0 || strcmp(prop->name, "Password") == 0) {
+            /* The agent downloads the image anonymously; credentials are not carried in the L3 Path Request */
+            em_printfout("Ignoring %s, not supported by the firmware download service", prop->name);
+        } else {
+            em_printfout("Unknown parameter '%s'", prop->name);
+            goto invalid;
+        }
+    }
+
+    /* Validate the configuration before the Service Request is initiated */
+    if (strncasecmp(url, "http://", 7) != 0 && strncasecmp(url, "https://", 8) != 0) {
+        em_printfout("URL must use http or https");
+        goto invalid;
+    }
+    if (file_size <= 0) {
+        em_printfout("FileSize must be greater than zero");
+        goto invalid;
+    }
+    if (strcasecmp(algorithm, "SHA-256") == 0) {
+        expected_hex_len = 64;
+    } else if (strcasecmp(algorithm, "SHA-384") == 0) {
+        expected_hex_len = 96;
+    } else if (strcasecmp(algorithm, "SHA-512") == 0) {
+        expected_hex_len = 128;
+    } else {
+        em_printfout("Unsupported CheckSumAlgorithm '%s'", algorithm);
+        goto invalid;
+    }
+    if (strlen(checksum) != expected_hex_len ||
+        strspn(checksum, "0123456789abcdefABCDEF") != expected_hex_len) {
+        em_printfout("CheckSum must be %u hex characters", expected_hex_len);
+        goto invalid;
+    }
+
+    {
+        /* Image name and version are derived from the URL file name (query and fragment stripped) */
+        const char *base = strrchr(url, '/') + 1;
+        size_t base_len = strcspn(base, "?#");
+        const char *dot = static_cast<const char *>(memchr(base, '.', base_len));
+        size_t ver_len = (dot != NULL) ? static_cast<size_t>(dot - base) : base_len;
+
+        if (base_len == 0 || base_len >= sizeof(fw_name) || ver_len == 0 || ver_len >= sizeof(version)) {
+            em_printfout("Cannot derive firmware name from URL");
+            goto invalid;
+        }
+        memcpy(fw_name, base, base_len);
+        memcpy(version, base, ver_len);
+    }
+
+    rc = bus_error_out_of_resources;
+    root = cJSON_CreateObject();
+    fw_obj = cJSON_CreateObject();
+    if (!root || !fw_obj) {
+        em_printfout("Create object failed");
+        cJSON_Delete(fw_obj);
+        goto cleanup;
+    }
+    if (!cJSON_AddItemToObject(root, "wfa-dataelements:FirmwareDownload", fw_obj)) {
+        em_printfout("Add item failed");
+        cJSON_Delete(fw_obj);
+        goto cleanup;
+    }
+    dm_easy_mesh_t::macbytes_to_string(dm->get_agent_al_interface_mac(), mac_str);
+    if (!cJSON_AddStringToObject(fw_obj, "ALID", mac_str) ||
+        !cJSON_AddStringToObject(fw_obj, "URL", url) ||
+        !cJSON_AddNumberToObject(fw_obj, "FileSize", file_size) ||
+        !cJSON_AddStringToObject(fw_obj, "Name", fw_name) ||
+        !cJSON_AddStringToObject(fw_obj, "Version", version) ||
+        !cJSON_AddStringToObject(fw_obj, "CheckSumAlgorithm", algorithm) ||
+        !cJSON_AddStringToObject(fw_obj, "CheckSum", checksum) ||
+        !cJSON_AddBoolToObject(fw_obj, "AutoActivate", activate)) {
+        em_printfout("Add firmware download parameters failed");
+        goto cleanup;
+    }
+
+    json_buff = cJSON_PrintUnformatted(root);
+    if (!json_buff) {
+        em_printfout("Create output buffer failed");
+        goto cleanup;
+    }
+    json_len = strlen(json_buff);
+    if (json_len >= EM_IO_BUFF_SZ) {
+        em_printfout("Buffer too big for subdoc");
+        free(json_buff);
+        rc = bus_error_invalid_input;
+        goto cleanup;
+    }
+
+    em_ctrl->io_process(em_bus_event_type_fw_download, json_buff, static_cast<unsigned int>(json_len));
+    free(json_buff);
+    cJSON_Delete(root);
+
+    if (output_params) {
+        *output_params = tr_181_t::tr181_set_status_output_prop("Success");
+    }
+    return bus_error_success;
+
+invalid:
+    rc = bus_error_invalid_input;
+cleanup:
+    cJSON_Delete(root);
+    if (output_params) {
+        *output_params = tr_181_t::tr181_set_status_output_prop("Failure");
+    }
+    return rc;
+}
+
 bus_error_t em_ctrl_t::cmd_beaconmetricsquery(const char *method_name, const bus_data_prop_t *input_params, bus_data_prop_t **output_params, void *async_handle)
 {
     (void)async_handle;
@@ -3754,6 +3943,126 @@ int dm_easy_mesh_ctrl_t::analyze_sta_steer(em_cmd_steer_params_t &params, em_cmd
 
     while ((pcmd[num] = tmp->clone_for_next()) != NULL) {
         tmp = pcmd[num];
+        num++;
+    }
+
+    return num;
+}
+
+int dm_easy_mesh_ctrl_t::analyze_command_fw_download(em_bus_event_t *evt, em_cmd_t *cmd[])
+{
+    cJSON *obj, *fw_obj, *item;
+    em_cmd_fw_download_params_t params;
+    em_subdoc_info_t *subdoc = &evt->u.subdoc;
+    const char *alg;
+    unsigned int hex_len, i;
+    int num = 0;
+    dm_easy_mesh_t *dm;
+    em_cmd_t *tmp;
+
+    memset(&params, 0, sizeof(params));
+
+    obj = cJSON_Parse(subdoc->buff);
+    if (obj == NULL) {
+        em_printfout("Failed to parse: %s", subdoc->buff);
+        return 0;
+    }
+
+    if ((fw_obj = cJSON_GetObjectItem(obj, "wfa-dataelements:FirmwareDownload")) == NULL) {
+        em_printfout("Failed to parse: %s", subdoc->buff);
+        cJSON_Delete(obj);
+        return 0;
+    }
+
+    item = cJSON_GetObjectItem(fw_obj, "ALID");
+    if (!cJSON_IsString(item) || strlen(item->valuestring) != strlen("00:00:00:00:00:00")) {
+        em_printfout("Invalid ALID");
+        cJSON_Delete(obj);
+        return 0;
+    }
+    dm_easy_mesh_t::string_to_macbytes(item->valuestring, params.al_mac);
+
+    item = cJSON_GetObjectItem(fw_obj, "URL");
+    if (!cJSON_IsString(item) || strlen(item->valuestring) >= sizeof(params.url)) {
+        em_printfout("Invalid URL");
+        cJSON_Delete(obj);
+        return 0;
+    }
+    snprintf(params.url, sizeof(params.url), "%s", item->valuestring);
+    params.protocol = (strncasecmp(params.url, "https://", 8) == 0) ? em_fw_dl_protocol_https : em_fw_dl_protocol_http;
+
+    item = cJSON_GetObjectItem(fw_obj, "FileSize");
+    if (!cJSON_IsNumber(item) || item->valuedouble <= 0) {
+        em_printfout("Invalid FileSize");
+        cJSON_Delete(obj);
+        return 0;
+    }
+    params.image_size = static_cast<unsigned long long>(item->valuedouble);
+
+    if ((item = cJSON_GetObjectItem(fw_obj, "Name")) != NULL && cJSON_IsString(item)) {
+        snprintf(params.name, sizeof(params.name), "%s", item->valuestring);
+    }
+    if ((item = cJSON_GetObjectItem(fw_obj, "Version")) != NULL && cJSON_IsString(item)) {
+        snprintf(params.version, sizeof(params.version), "%s", item->valuestring);
+    }
+
+    item = cJSON_GetObjectItem(fw_obj, "CheckSumAlgorithm");
+    alg = cJSON_IsString(item) ? item->valuestring : "";
+    if (strcasecmp(alg, "SHA-256") == 0) {
+        params.checksum_alg = em_fw_dl_checksum_sha256;
+        hex_len = 64;
+    } else if (strcasecmp(alg, "SHA-384") == 0) {
+        params.checksum_alg = em_fw_dl_checksum_sha384;
+        hex_len = 96;
+    } else if (strcasecmp(alg, "SHA-512") == 0) {
+        params.checksum_alg = em_fw_dl_checksum_sha512;
+        hex_len = 128;
+    } else {
+        em_printfout("Invalid CheckSumAlgorithm");
+        cJSON_Delete(obj);
+        return 0;
+    }
+
+    item = cJSON_GetObjectItem(fw_obj, "CheckSum");
+    if (!cJSON_IsString(item) || strlen(item->valuestring) != hex_len) {
+        em_printfout("Invalid CheckSum");
+        cJSON_Delete(obj);
+        return 0;
+    }
+    for (i = 0; i < hex_len / 2; i++) {
+        unsigned int byte;
+        if (sscanf(item->valuestring + 2 * i, "%2x", &byte) != 1) {
+            em_printfout("Invalid CheckSum");
+            cJSON_Delete(obj);
+            return 0;
+        }
+        params.checksum[i] = static_cast<unsigned char>(byte);
+    }
+
+    item = cJSON_GetObjectItem(fw_obj, "AutoActivate");
+    params.activate_immediately = cJSON_IsTrue(item);
+    params.max_retry = EM_FW_DL_DEFAULT_MAX_RETRY;
+
+    cJSON_Delete(obj);
+
+    /* Find the extender's data model to build the command with */
+    for (dm = get_first_dm(); dm != NULL; dm = get_next_dm(dm)) {
+        if (dm->get_device() != NULL &&
+            memcmp(dm->get_agent_al_interface_mac(), params.al_mac, sizeof(mac_address_t)) == 0) {
+            break;
+        }
+    }
+    if (dm == NULL) {
+        em_printfout("No data model found for the target extender");
+        return 0;
+    }
+
+    cmd[num] = new em_cmd_fw_download_t(params, *dm);
+    tmp = cmd[num];
+    num++;
+
+    while ((cmd[num] = tmp->clone_for_next()) != NULL) {
+        tmp = cmd[num];
         num++;
     }
 

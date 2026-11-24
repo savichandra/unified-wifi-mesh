@@ -270,6 +270,10 @@ void em_t::orch_execute(em_cmd_t *pcmd)
             m_sm.set_state(em_state_ctrl_unassoc_sta_link_metrics_pending);
             break;
 
+        case em_cmd_type_fw_download:
+            m_sm.set_state(em_state_ctrl_fw_svc_req_pending);
+            break;
+
         case em_cmd_type_unassoc_sta_result:
             m_sm.set_state(em_state_agent_unassoc_sta_metrics_report_pending);
             break;
@@ -354,9 +358,12 @@ void em_t::proto_process(unsigned char *data, unsigned int len)
             break;
 
         case em_msg_type_topo_vendor:
-            // Link reports are handled in metrics; other vendor attributes go to the extension
-            em_metrics_t::process_msg(data, len);
-            em_vendor_t::handle_vendor_msg(data, len);
+            // Firmware download messages are consumed here; link reports are handled in metrics
+            // and other vendor attributes go to the extension
+            if (em_fw_download_t::process_msg(data, len) == false) {
+                em_metrics_t::process_msg(data, len);
+                em_vendor_t::handle_vendor_msg(data, len);
+            }
             break;
 
         case em_msg_type_dpp_cce_ind:
@@ -622,6 +629,10 @@ void em_t::handle_ctrl_state()
 
         case em_cmd_type_client_assoc_ctrl_req:
             em_steering_t::process_ctrl_state();
+            break;
+
+        case em_cmd_type_fw_download:
+            em_fw_download_t::process_ctrl_state();
             break;
 
         case em_cmd_type_beacon_query:
@@ -3031,6 +3042,11 @@ const char *em_t::state_2_str(em_state_t state)
         EM_STATE_2S(em_state_ctrl_topo_publish_pending)
 	EM_STATE_2S(em_state_ctrl_unassoc_sta_link_metrics_pending)
         EM_STATE_2S(em_state_ctrl_client_assoc_ctrl_req_pending)
+        EM_STATE_2S(em_state_ctrl_fw_svc_req_pending)
+        EM_STATE_2S(em_state_ctrl_fw_svc_rsp_pending)
+        EM_STATE_2S(em_state_ctrl_fw_l3_path_req_pending)
+        EM_STATE_2S(em_state_ctrl_fw_l3_path_rsp_pending)
+        EM_STATE_2S(em_state_ctrl_fw_download_done)
         EM_STATE_2S(em_state_agent_unconfigured)
         EM_STATE_2S(em_state_agent_autoconfig_rsp_pending)
         EM_STATE_2S(em_state_agent_wsc_m2_pending)

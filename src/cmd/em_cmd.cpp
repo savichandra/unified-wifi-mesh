@@ -486,6 +486,11 @@ void em_cmd_t::init()
             m_svc = em_service_type_ctrl;
             break;
 
+        case em_cmd_type_fw_download:
+            snprintf(m_name, sizeof(m_name), "%s", "fw_download");
+            m_svc = em_service_type_ctrl;
+            break;
+
         default:
             snprintf(m_name, sizeof(m_name), "%s", "unknown");
             m_svc = em_service_type_none;
@@ -541,6 +546,7 @@ const char *em_cmd_t::get_bus_event_type_str(em_bus_event_type_t type)
 	BUS_EVENT_TYPE_2S(em_bus_event_type_failed_conn)
 	BUS_EVENT_TYPE_2S(em_bus_event_type_client_disassoc_stats)
         BUS_EVENT_TYPE_2S(em_bus_event_type_client_assoc_ctrl_req)
+        BUS_EVENT_TYPE_2S(em_bus_event_type_fw_download)
         BUS_EVENT_TYPE_2S(em_bus_event_type_beacon_query)
        
         default:
@@ -623,6 +629,7 @@ const char *em_cmd_t::get_orch_op_str(dm_orch_type_t type)
 	ORCH_TYPE_2S(dm_orch_type_unassoc_sta_result)
         ORCH_TYPE_2S(dm_orch_type_vendor_data)
         ORCH_TYPE_2S(dm_orch_type_client_assoc)
+        ORCH_TYPE_2S(dm_orch_type_fw_download)
         ORCH_TYPE_2S(dm_orch_type_beacon_query)
 
         default:
@@ -685,6 +692,7 @@ const char *em_cmd_t::get_cmd_type_str(em_cmd_type_t type)
         CMD_TYPE_2S(em_cmd_type_unassoc_sta_result)
         CMD_TYPE_2S(em_cmd_type_vendor_data)
         CMD_TYPE_2S(em_cmd_type_client_assoc_ctrl_req)
+        CMD_TYPE_2S(em_cmd_type_fw_download)
 
         default:
            break;
@@ -855,6 +863,10 @@ em_cmd_type_t em_cmd_t::bus_2_cmd_type(em_bus_event_type_t etype)
             type = em_cmd_type_client_assoc_ctrl_req;
             break;
 
+        case em_bus_event_type_fw_download:
+            type = em_cmd_type_fw_download;
+            break;
+
         default:
             break;
     }
@@ -917,6 +929,10 @@ em_bus_event_type_t em_cmd_t::cmd_2_bus_event_type(em_cmd_type_t ctype)
 
         case em_cmd_type_client_assoc_ctrl_req:
             type = em_bus_event_type_client_assoc_ctrl_req;
+            break;
+
+        case em_cmd_type_fw_download:
+            type = em_bus_event_type_fw_download;
             break;
 
         default:

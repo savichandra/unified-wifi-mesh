@@ -133,6 +133,113 @@ void em_ctrl_t::handle_client_steer(em_bus_event_t *evt)
     }
 }
 
+void em_ctrl_t::handle_fw_download(em_bus_event_t *evt)
+{
+    em_cmd_t *pcmd[EM_MAX_CMD] = {NULL};
+    int num;
+
+    if (m_orch->is_cmd_type_in_progress(evt) == true) {
+        m_ctrl_cmd->send_result(em_cmd_out_status_prev_cmd_in_progress);
+    } else if ((num = m_data_model.analyze_command_fw_download(evt, pcmd)) <= 0) {
+        m_ctrl_cmd->send_result(status_for_noncmd(num));
+    } else if (m_orch->submit_commands(pcmd, static_cast<unsigned int> (num)) > 0) {
+        m_ctrl_cmd->send_result(em_cmd_out_status_success);
+    } else {
+        m_ctrl_cmd->send_result(em_cmd_out_status_not_ready);
+    }
+}
+
+void em_ctrl_t::fw_download_begin(const em_cmd_fw_download_params_t *params)
+{
+    em_fw_dl_status_t st;
+    mac_addr_str_t key;
+
+    memset(&st, 0, sizeof(st));
+    memcpy(st.al_mac, params->al_mac, sizeof(mac_address_t));
+    st.in_use = true;
+    st.active = true;
+    snprintf(st.name, sizeof(st.name), "%s", params->name);
+    snprintf(st.version, sizeof(st.version), "%s", params->version);
+    st.total_bytes = params->image_size;
+    st.last_op_status = em_fw_dl_op_in_progress;
+
+    dm_easy_mesh_t::macbytes_to_string(const_cast<unsigned char *>(params->al_mac), key);
+    std::lock_guard<std::mutex> lock(m_fw_status_mtx);
+    m_fw_status[key] = st;
+}
+
+void em_ctrl_t::fw_download_service_rsp(const mac_address_t al_mac, const em_fw_dl_svc_rsp_t *rsp)
+{
+    mac_addr_str_t key;
+
+    dm_easy_mesh_t::macbytes_to_string(const_cast<unsigned char *>(al_mac), key);
+    std::lock_guard<std::mutex> lock(m_fw_status_mtx);
+    em_fw_dl_status_t &st = m_fw_status[key];
+    st.supported_protocols = rsp->supported_protocols;
+    snprintf(st.current_version, sizeof(st.current_version), "%s", rsp->current_version);
+}
+
+void em_ctrl_t::fw_download_path_rsp(const mac_address_t al_mac, const em_fw_dl_path_rsp_t *rsp)
+{
+    mac_addr_str_t key;
+
+    dm_easy_mesh_t::macbytes_to_string(const_cast<unsigned char *>(al_mac), key);
+    std::lock_guard<std::mutex> lock(m_fw_status_mtx);
+    em_fw_dl_status_t &st = m_fw_status[key];
+    st.path_error_code = rsp->error_code;
+    if (rsp->status != em_fw_dl_path_status_accepted) {
+        st.active = false;
+        st.last_op_status = em_fw_dl_op_failed;
+    }
+}
+
+void em_ctrl_t::fw_download_notif(const mac_address_t al_mac, const em_fw_dl_notif_t *notif)
+{
+    mac_addr_str_t key;
+
+    dm_easy_mesh_t::macbytes_to_string(const_cast<unsigned char *>(al_mac), key);
+    std::lock_guard<std::mutex> lock(m_fw_status_mtx);
+    em_fw_dl_status_t &st = m_fw_status[key];
+
+    st.last_event = notif->event;
+    st.last_op_status = notif->op_status;
+    st.total_bytes = notif->total_bytes;
+    st.bytes_downloaded = notif->bytes_downloaded;
+    st.percentage = notif->percentage;
+
+    /* Terminal events; only FIRMWARE_UPGRADE_COMPLETED is a success */
+    switch (notif->event) {
+        case em_fw_dl_event_upgrade_completed:
+        case em_fw_dl_event_connection_failed:
+        case em_fw_dl_event_download_failed:
+        case em_fw_dl_event_download_cancelled:
+        case em_fw_dl_event_validation_failed:
+        case em_fw_dl_event_flashing_failed:
+        case em_fw_dl_event_post_reboot_verification_failed:
+        case em_fw_dl_event_upgrade_failed:
+        case em_fw_dl_event_rollback_completed:
+        case em_fw_dl_event_activation_failed:
+            st.active = false;
+            break;
+        default:
+            break;
+    }
+}
+
+bool em_ctrl_t::get_fw_status(const mac_address_t al_mac, em_fw_dl_status_t *out)
+{
+    mac_addr_str_t key;
+
+    dm_easy_mesh_t::macbytes_to_string(const_cast<unsigned char *>(al_mac), key);
+    std::lock_guard<std::mutex> lock(m_fw_status_mtx);
+    auto it = m_fw_status.find(key);
+    if (it == m_fw_status.end()) {
+        return false;
+    }
+    *out = it->second;
+    return true;
+}
+
 void em_ctrl_t::handle_client_assoc(em_bus_event_t *evt)
 {
     em_cmd_t *pcmd[EM_MAX_CMD] = {NULL};
@@ -1190,6 +1297,10 @@ void em_ctrl_t::handle_bus_event(em_bus_event_t *evt)
             handle_client_steer(evt);   
             break;
 
+        case em_bus_event_type_fw_download:
+            handle_fw_download(evt);
+            break;
+
         case em_bus_event_type_disassoc_sta:
             handle_client_disassoc(evt);
             break;
@@ -2005,6 +2116,9 @@ void em_ctrl_t::start_complete()
             { bus_data_type_property, false, 0, 0, 0, NULL } },
         { const_cast<char*>(DE_STA_CLIENTSTEER), bus_element_type_method,
             { NULL, NULL , NULL, NULL, NULL, tr_181_t::clientsteer_handler}, slow_speed, ZERO_TABLE,
+            { bus_data_type_property, false, 0, 0, 0, NULL } },
+        { const_cast<char*>(DE_FWIMG_DOWNLOAD), bus_element_type_method,
+            { NULL, NULL , NULL, NULL, NULL, tr_181_t::fwimage_download_handler}, slow_speed, ZERO_TABLE,
             { bus_data_type_property, false, 0, 0, 0, NULL } },
         { const_cast<char*>(DE_STA_BEACONMETRICSQ), bus_element_type_method,
             { NULL, NULL , NULL, NULL, NULL, tr_181_t::beaconmetricsquery_handler}, slow_speed, ZERO_TABLE,

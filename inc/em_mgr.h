@@ -22,6 +22,7 @@
 #include "em.h"
 #include "em_orch.h"
 #include "ieee80211.h"
+#include "em_fw_download.h"
 
 class em_mgr_t {
    
@@ -88,6 +89,16 @@ public:
 	 * @returns Pointer to the orchestration object(controller or agent), or nullptr if not available.
 	 */
 	virtual em_orch_t *get_orch() { return nullptr; }
+
+	/**!
+	 * @brief Controller hooks recording extender firmware download progress.
+	 *
+	 * Default implementations ignore the update (agent side).
+	 */
+	virtual void fw_download_begin(const em_cmd_fw_download_params_t *) {}
+	virtual void fw_download_service_rsp(const mac_address_t, const em_fw_dl_svc_rsp_t *) {}
+	virtual void fw_download_path_rsp(const mac_address_t, const em_fw_dl_path_rsp_t *) {}
+	virtual void fw_download_notif(const mac_address_t, const em_fw_dl_notif_t *) {}
 
     
 	/**!
