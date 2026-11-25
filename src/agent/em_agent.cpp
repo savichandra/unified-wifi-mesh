@@ -3136,7 +3136,7 @@ void em_agent_t::handle_backhaul_change(em_bus_event_t *evt)
 
     if (bh.ethernet_backhaul_active) {
         if (memchr(bh.ifname, '\0', sizeof(bh.ifname)) == nullptr || bh.ifname[0] == '\0' ||
-            bh.ifindex == 0 || bh.root_port == 0 || bh.port_state != STP_FORWARDING ||
+            bh.ifindex == 0 || bh.root_port == 0 || bh.port_state != em_stp_monitor_t::STP_FORWARDING ||
             (bh.mac_addr[0] & 0x01)) {
             em_printfout("EM_BH: rejected invalid forwarding root event");
             return;

@@ -22,7 +22,7 @@
 #include "em.h"
 #include "em_orch.h"
 #include "ieee80211.h"
-#include <net/if.h>
+#include "em_stp.h"
 
 class em_mgr_t {
    
@@ -31,100 +31,7 @@ class em_mgr_t {
     em_queue_t  m_queue;
     unsigned int m_tick_demultiplex;
     unsigned short m_msg_id;
-    std::string m_stp_bridge_name;
-    int m_netlink_socket = -1;
-    static constexpr size_t EM_NETLINK_RECV_BUFFER = 16384;
-    static constexpr int EM_NETLINK_MAX_BATCH = 8;
-
-    struct em_stp_port_event_t {
-        unsigned int ui_ifindex = 0;
-        unsigned int ui_stpstate = 0;
-        std::string ui_ifname;
-    };
-
-    enum em_stp_root_status_t {
-        STP_ROOT_SUCCESS=0,
-        INVALID_STP_BRIDGE_INTF=1,
-        STP_STATE_READ_FAILED,
-        STP_DISABLED_BRIDGE_INTF,
-        STP_ROOT_PORT_READ_FAILED,
-        STP_ROOT_IS_BRIDGE,
-        STP_ROOT_BRIF_OPEN_FAILED,
-        STP_ROOT_NOT_FOUND,
-        STP_ROOT_STATE_READ_FAILED,
-        STP_ROOT_CHANGED,
-        STP_ROOT_NOT_GATEWAY,
-        STP_ROOT_NOT_FORWARDING,
-        STP_ROOT_IFINDEX_FAILED,
-        STP_ROOT_BRIF_READ_FAILED
-    };
-
-    struct em_stp_root_info_t {
-        std::string ifname;
-        unsigned int ifindex = 0;
-        unsigned int root_port = 0;
-        unsigned int port_state = 0;
-    };
-
-    enum em_stp_root_track_state_t {
-        STP_ROOT_TRACK_UNKNOWN = 0,
-        STP_ROOT_TRACK_CONVERGING,
-        STP_ROOT_TRACK_FORWARDING,
-        STP_ROOT_TRACK_UNAVAILABLE
-    };
-
-    struct em_stp_root_tracker_t {
-        em_stp_root_track_state_t state;
-        em_stp_root_info_t current_root;
-        em_stp_root_info_t last_valid_root;
-        bool has_last_valid_root;
-
-        em_stp_root_tracker_t()
-        : state(STP_ROOT_TRACK_UNKNOWN),
-          current_root(),
-          last_valid_root(),
-          has_last_valid_root(false)
-        {
-        }
-    };
-
-    em_stp_root_tracker_t m_stp_root_tracker;
-    em_stp_root_info_t m_last_notified_backhaul_interface;
-    bool m_backhaul_interface_notify_initialized = false;
-    bool m_backhaul_status_notified = false;
-    bool m_backhaul_status_active = false;
-    unsigned int m_gateway_stp_priority = 0;
-
-    bool initialize_stp();
-    bool parse_stp_priority(const char *value, unsigned int &priority);
-    bool write_stp_sysfs(const std::string &path, const std::string &value);
-    int create_netlink_socket();
-    void close_netlink_socket();
-    bool enable_netlink_monitoring();
-    void process_netlink_events();
-    const char *stp_state_to_string(unsigned int state);
-    bool read_sysfs_uint(const std::string &path, unsigned int &uivalue, int ibase);
-    bool is_valid_ifname(const std::string &name) const;
-    int read_stp_root_port(em_stp_root_info_t &info);
-    void evaluate_stp_root_port();
-    void update_stp_root_tracker(int status, const em_stp_root_info_t &root_info);
-    static bool is_same_stp_root(const em_stp_root_info_t &lhs, const em_stp_root_info_t &rhs);
-    bool get_backhaul_interface_mac(const std::string &ifname,uint8_t (&mac_addr)[6]) const;
-    static bool is_ethernet_backhaul_root(const std::string &ifname);
-    static bool read_stp_bridge_priority(const std::string &path, unsigned int &priority);
-    bool notify_backhaul_interface_change(const em_stp_root_info_t &root_info);
-
-protected:
-    unsigned int STP_FORWARDING = 3;
-
-    struct em_backhaul_interface_notify_t {
-        char ifname[IFNAMSIZ] = {};
-	uint8_t mac_addr[6] = {};
-        uint32_t ifindex = 0;
-        uint32_t root_port = 0;
-        uint32_t port_state = 0;
-        bool ethernet_backhaul_active = false;
-    };
+    em_stp_monitor_t m_stp;
 
 public:
     pthread_mutex_t m_mutex;
